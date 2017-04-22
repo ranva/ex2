@@ -1,0 +1,163 @@
+---
+title: "ass2"
+output: html_document
+---
+# Third Algorithm - Tree Model
+## Define the root directory
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(root.dir ='~/Desktop/Ass2/Titanic')
+getwd()
+```
+
+# Pre processing
+## Read the train and the test data
+```{r}
+dftrain <- read.csv("train.csv")
+dftest <- read.csv("test.csv")
+```
+
+## Plot the data(Survived\Not-Sex) to see if the Sex feature is important
+```{r}
+library(ggplot2)
+qplot(Survived, data=dftrain, facets = ~Survived, fill=Sex, bins=1)
+
+```
+
+## Plot the data(Survived\Not-Embarked)  to see if the Embarkes feature is important
+```{r}
+
+qplot(Embarked, data=dftrain, facets = ~Survived, fill=Embarked)
+
+```
+
+
+## Save Survived column and then remove it from the train data in order to bind the ## train and the test data
+```{r}
+survivcopy=dftrain$Survived
+dftrain<-subset(dftrain,select = -Survived)
+```
+
+## Save PassengerId data(need it two end model to check the results)
+## Bind the train and the test data
+## Define Pclass as a factor data
+## Remove the cabin column-iirelevant
+```{r}
+pasidtrain<-dftrain$PassengerId
+pasidtest<-dftest$PassengerId
+df <- rbind(dftrain,dftest)[,-1]
+df$Pclass <- as.factor(df$Pclass)
+df<-subset(df,select= -Cabin)
+
+summary(df)
+```
+
+## All the missing data of the Embarked column-'S'
+```{r}
+dftrain$Embarked[dftrain$Embarked==""] <-'S'
+
+```
+
+## Check at the Fare column which data is n.a
+```{r}
+ which(is.na(df$Fare))
+```
+
+## Complete the missing data at the Fare column-Median
+```{r}
+df$Fare[1044] <- median(df$Fare, na.rm=TRUE)
+```
+
+## Check the Age na data
+```{r}
+sum(is.na(df$Age))
+```
+
+
+## Using mice library to predict the missing age data
+## Add title column
+```{r}
+library(mice)
+set.seed(129)
+mp<-mice(data = df[,!names(df) %in% c('PassengerId','Pclass','Name','Sex','Ticket')],method='rf')
+mice_result <- complete(mp)
+df$Age<-mice_result$Age
+
+```
+```{r}
+df$Title <- gsub('(.*, )|(\\..*)', '', df$Name)
+```
+
+
+## Ordering the title column - the title helps to get better results
+```{r}
+head(df)
+royal <- c('Dona', 'Lady', 'the Countess','Capt', 'Col', 'Don', 
+                'Dr', 'Major', 'Rev', 'Sir', 'Jonkheer') 
+df$Title[df$Title == 'Mlle']        <- 'Miss' 
+df$Title[df$Title == 'Ms']          <- 'Miss'
+df$Title[df$Title == 'Mme']         <- 'Mrs' 
+df$Title[df$Title %in% royal]  <- 'royal'
+```
+```{r}
+df$Family <- df$SibSp + df$Parch + 1
+df$FsizeD[df$Family == 1] <- 'single'
+df$FsizeD[df$Family < 5 & df$Family > 1] <- 'small'
+df$FsizeD[df$Family > 4] <- 'big'
+```
+
+
+## Categorized the age data to 'Child'-under 18 and 'Adult'-over 18
+## And factorized the data
+```{r}
+df$Child[df$Age < 18] <- 'Child'
+df$Child[df$Age >= 18] <- 'Adult'
+df$Child  <- factor(df$Child)
+
+```
+
+## Divide the data to train and test again after the pre proccessing
+```{r}
+sum(is.na(df$Age))
+train1 <- df[1:891,]
+test1 <- df[892:1309,]
+```
+
+## Create the tree model
+```{r}
+library(tree)
+train1$Survived<- survivcopy
+tree1 <- tree(Survived~ Pclass + Sex + Age + SibSp + Parch + 
+                                            Fare + Embarked + Title + 
+                                            FsizeD + Child, data = train1)
+summary(tree1)
+```
+
+## Plot the tree
+```{r}
+plot(tree1)
+text(tree1 ,pretty =0)
+tree1
+```
+
+# Predict the test data using the tree model
+```{r}
+Pred1 <- predict(tree1, test1)
+chkdf <- data.frame(PassengerId = dftest$PassengerId, Survived = Pred1,
+                    gender = test1$Sex)
+chkdf$final[chkdf$Survived <= 0.4]<- 0
+chkdf$final[chkdf$Survived > 0.4]<- 1
+
+```
+
+## Check at the Fare column which data is n.a
+```{r}
+ which(is.na(df$Fare))
+```
+
+## Write the answers to the file
+```{r}
+submit <- data.frame(PassengerId = chkdf$PassengerId, Survived = chkdf$final)
+write.csv(submit, file = "dtree.csv", row.names = FALSE)
+```
+
+
